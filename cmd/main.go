@@ -9,31 +9,40 @@ import (
 func main() {
 	router := http.NewServeMux()
 
-	router.HandleFunc("GET /{short_url}", useUrl)
-
-	router.HandleFunc("GET /api/urls/{short_url}", getUrl)
-	router.HandleFunc("POST /api/urls", createUrl)
-	router.HandleFunc("DELETE /api/urls/{short_url}", deleteUrl)
+	router.HandleFunc("GET /{short_url}", useURL)
+	router.HandleFunc("GET /api/urls/{short_url}", getURL)
+	router.HandleFunc("POST /api/urls", createURL)
+	router.HandleFunc("DELETE /api/urls/{short_url}", deleteURL)
 
 	log.Println("Server up and listening on port 8080")
-	http.ListenAndServe(":8080", router)
+	if err := http.ListenAndServe(":8080", router); err != nil {
+		log.Fatalf("Couldn't start server: %v", err)
+	}
 }
 
-var urls = make(map[string]Url)
+var urls = make(map[string]URL)
 
-type Url struct {
-	ShortUrl string `json:"short_url"`
-	LongUrl  string `json:"long_url"`
+type URL struct {
+	ShortURL string `json:"short_url"`
+	LongURL  string `json:"long_url"`
 }
 
-func useUrl(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusServiceUnavailable)
+func useURL(w http.ResponseWriter, r *http.Request) {
+	shortURL := r.PathValue("short_url")
+
+	entry, ok := urls[shortURL]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	http.Redirect(w, r, entry.LongURL, http.StatusFound)
 }
 
-func getUrl(w http.ResponseWriter, r *http.Request) {
-	shortUrl := r.PathValue("short_url")
+func getURL(w http.ResponseWriter, r *http.Request) {
+	shortURL := r.PathValue("short_url")
 
-	entry, ok := urls[shortUrl]
+	entry, ok := urls[shortURL]
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -44,8 +53,8 @@ func getUrl(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(entry)
 }
 
-func createUrl(w http.ResponseWriter, r *http.Request) {
-	var url Url
+func createURL(w http.ResponseWriter, r *http.Request) {
+	var url URL
 
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -55,27 +64,27 @@ func createUrl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, ok := urls[url.ShortUrl]
+	_, ok := urls[url.ShortURL]
 	if ok {
 		w.WriteHeader(http.StatusConflict)
 		return
 	}
 
-	urls[url.ShortUrl] = url
+	urls[url.ShortURL] = url
 
 	w.WriteHeader(http.StatusCreated)
 }
 
-func deleteUrl(w http.ResponseWriter, r *http.Request) {
-	shortUrl := r.PathValue("short_url")
+func deleteURL(w http.ResponseWriter, r *http.Request) {
+	shortURL := r.PathValue("short_url")
 
-	_, ok := urls[shortUrl]
+	_, ok := urls[shortURL]
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	delete(urls, shortUrl)
+	delete(urls, shortURL)
 
 	w.WriteHeader(http.StatusNoContent)
 }
