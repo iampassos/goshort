@@ -1,18 +1,50 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
+
+	"database/sql"
+	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/iampassos/goshort/internal/domain"
+	"github.com/iampassos/goshort/internal/urls"
 )
 
 func main() {
+	db, err := sql.Open("sqlite3", "data.db")
+	if err != nil {
+		log.Fatalf("Couldn't connect to database: %v", err)
+	}
+	defer db.Close()
+
+	db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+		id INTEGER PRIMARY KEY,
+		username TEXT NOT NULL UNIQUE,
+		password TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+		`)
+
+	db.Exec(`
+		CREATE TABLE IF NOT EXISTS urls (
+		id INTEGER PRIMARY KEY,
+		short_url TEXT NOT NULL UNIQUE,
+		long_url TEXT NOT NULL,
+		user_id INTEGER NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+		FOREIGN KEY (user_id) REFERENCES users (id)
+			ON DELETE CASCADE
+		)
+		`)
+
 	router := http.NewServeMux()
 
-	router.HandleFunc("GET /{short_url}", useURL)
-	router.HandleFunc("GET /api/urls/{short_url}", getURL)
-	router.HandleFunc("POST /api/urls", createURL)
-	router.HandleFunc("DELETE /api/urls/{short_url}", deleteURL)
+	router.HandleFunc("GET /{short_url}", useUrl)
+
+	urls.RegisterRoutes(router)
 
 	log.Println("Server up and listening on port 8080")
 	if err := http.ListenAndServe(":8080", router); err != nil {
@@ -20,71 +52,14 @@ func main() {
 	}
 }
 
-var urls = make(map[string]URL)
+func useUrl(w http.ResponseWriter, r *http.Request) {
+	shortUrl := r.PathValue("short_url")
 
-type URL struct {
-	ShortURL string `json:"short_url"`
-	LongURL  string `json:"long_url"`
-}
-
-func useURL(w http.ResponseWriter, r *http.Request) {
-	shortURL := r.PathValue("short_url")
-
-	entry, ok := urls[shortURL]
+	entry, ok := domain.Urls[shortUrl]
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	http.Redirect(w, r, entry.LongURL, http.StatusFound)
-}
-
-func getURL(w http.ResponseWriter, r *http.Request) {
-	shortURL := r.PathValue("short_url")
-
-	entry, ok := urls[shortURL]
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	w.Header().Add("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(entry)
-}
-
-func createURL(w http.ResponseWriter, r *http.Request) {
-	var url URL
-
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	err := decoder.Decode(&url)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	_, ok := urls[url.ShortURL]
-	if ok {
-		w.WriteHeader(http.StatusConflict)
-		return
-	}
-
-	urls[url.ShortURL] = url
-
-	w.WriteHeader(http.StatusCreated)
-}
-
-func deleteURL(w http.ResponseWriter, r *http.Request) {
-	shortURL := r.PathValue("short_url")
-
-	_, ok := urls[shortURL]
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	delete(urls, shortURL)
-
-	w.WriteHeader(http.StatusNoContent)
+	http.Redirect(w, r, entry.LongUrl, http.StatusFound)
 }
